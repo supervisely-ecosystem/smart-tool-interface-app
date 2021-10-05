@@ -1,68 +1,53 @@
-import os
 import cv2
+import numpy as np
 import globals as g
 import supervisely_lib as sly
-from supervisely_lib.io.fs import remove_dir
 
 
-def upload_frames(api: sly.Api, dataset_id, names, images_paths, anns, metas, progress):
-    if len(names) > 0:
-        new_image_infos = api.image.upload_paths(dataset_id, names, images_paths, metas=metas)
-        new_image_ids = [img_info.id for img_info in new_image_infos]
-        api.annotation.upload_anns(new_image_ids, anns)
-        progress.iters_done_report(len(names))
+# def get_smart_bbox(crop):
+#     x1, y1 = crop[0]["x"], crop[0]["y"]
+#     x2, y2 = crop[1]["x"], crop[1]["y"]
+#     return x1, y1, x2, y2
 
 
-def convert_tags(tags, prop_container, frame_container, frame_indices=None):
-    for video_tag in tags:
-        tag = sly.Tag(video_tag.meta, value=video_tag.value, labeler_login=video_tag.labeler_login)
-        if video_tag.frame_range is None:
-            prop_container.append(tag)
-        else:
-            for frame_index in range(video_tag.frame_range[0], video_tag.frame_range[1] + 1):
-                frame_container[frame_index].append(tag)
-                if frame_indices is not None:
-                    frame_indices.append(frame_index)
+def get_pos_neg_points_list_from_context(context):
+    pos_points = context["positive"]
+    neg_points = context["negative"]
+
+    pos_points_list = []
+    neg_points_list = []
+    for coords in pos_points:
+        pos_point = []
+        for coord in coords:
+            pos_point.append(coords[coord])
+        pos_points_list.append(pos_point)
+
+    for coords in neg_points:
+        neg_point = []
+        for coord in coords:
+            neg_point.append(coords[coord])
+        neg_points_list.append(neg_point)
+
+    return pos_points_list, neg_points_list
 
 
-def add_object_id_tag(vobject_id, prop_container):
-    vobj_id_tag = sly.Tag(g.vobj_id_tag_meta, value=vobject_id)
-    prop_container.append(vobj_id_tag)
+def get_bitmap_from_points(pos_points, neg_points):
+    mask = np.zeros((800, 1067, 3), np.uint8)
+    for pos_point in pos_points:
+        cv2.circle(mask, (pos_point[0], pos_point[1]), 15, (255, 255, 255), -1)
+    for neg_point in neg_points:
+        cv2.circle(mask, (neg_point[0], neg_point[1]), 15, (0, 0, 0), -1)
+    sly.image.write(f'{g.my_app.data_dir}/sly_base_sir/images/smart_mask.png', mask)
+    mask = mask[..., 0]
+    bool_mask = np.array(mask, dtype=bool)
+    bitmap = sly.Bitmap(bool_mask)
+    return bitmap
 
 
-def need_download_video(total_frames, total_annotated_frames):
-    frames_threshold = int(total_frames * g.need_download_threshold)
-    if total_annotated_frames > frames_threshold:
-        return True
-    return False
+def unpack_bitmap(bitmap):
+    bitmap_json = bitmap.to_json()["bitmap"]
+    bitmap_origin = bitmap_json["origin"]
+    bitmap_origin = {"y": bitmap_origin[1], "x": bitmap_origin[0]}
 
-
-def get_frames_from_video(video_name, video_path, frames_to_convert):
-    image_names = []
-    image_paths = []
-    vidcap = cv2.VideoCapture(video_path)
-    progress = sly.Progress(f"Extracting frames from {video_name}", len(frames_to_convert))
-    for frame_number in frames_to_convert:
-        image_name = video_name + "_" + str(frame_number).zfill(5) + ".jpg"
-        image_names.append(image_name)
-        image_path = os.path.join(g.img_dir, image_name)
-        image_paths.append(image_path)
-        vidcap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-        success, image = vidcap.read()
-        cv2.imwrite(image_path, image)
-        progress.iter_done_report()
-    return image_names, image_paths
-
-
-def get_frames_from_api(api, video_id, video_name, frames_to_convert):
-    image_names = []
-    images_paths = []
-    progress = sly.Progress(f"Extracting frames from {video_name}", len(frames_to_convert))
-    for frame_index in frames_to_convert:
-        image_name = video_name + "_" + str(frame_index).zfill(5) + ".jpg"
-        image_names.append(image_name)
-        image_path = os.path.join(g.img_dir, image_name)
-        api.video.frame.download_path(video_id, frame_index, image_path)
-        images_paths.append(image_path)
-        progress.iter_done_report()
-    return image_names, images_paths
+    bitmap_data = bitmap_json["data"]
+    return bitmap_origin, bitmap_data
