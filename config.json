@@ -8,7 +8,7 @@
   "docker_image": "supervisely/base-py-sdk:6.1.97",
   "main_script": "src/main.py",
   "task_location": "workspace_tasks",
-  "icon": "https://i.imgur.com/P6BjsxA.png",
+  "icon": "https://github.com/supervisely-ecosystem/smart-tool-interface-app/assets/48245050/f197b586-6ed6-4da0-8798-5088f5d9382b",
   "icon_background": "#FFFFFF",
   "headless": true,
   "session_tags": [
